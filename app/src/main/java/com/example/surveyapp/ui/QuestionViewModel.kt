@@ -55,17 +55,13 @@ class QuestionViewModel @Inject constructor(
             _currentQuestion = _questions[value - 1]
         }
 
-    init {
-        loadQuestions()
-    }
-
     private fun getCurrentAnswerOrEmpty(): String {
         return _submittedAnswers.value?.firstOrNull {
             it.id == _currentQuestion.id
         }?.answer ?: ""
     }
 
-    private fun loadQuestions() {
+    fun loadQuestions() {
         viewModelScope.launch {
             questionsRepository.loadQuestions().onSuccess {
                 if (it.isNotEmpty())
