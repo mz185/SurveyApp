@@ -55,25 +55,6 @@ class QuestionViewModel @Inject constructor(
             _currentQuestion = _questions[value - 1]
         }
 
-    private fun getCurrentAnswerOrEmpty(): String {
-        return _submittedAnswers.value?.firstOrNull {
-            it.id == _currentQuestion.id
-        }?.answer ?: ""
-    }
-
-    fun loadQuestions() {
-        viewModelScope.launch {
-            questionsRepository.loadQuestions().onSuccess {
-                if (it.isNotEmpty())
-                    _questions = it
-            }.onFailure {
-                _message.postValue(
-                    Message(false, it.message ?: "Could not load questions")
-                )
-            }
-        }
-    }
-
     private fun updateSubmitBtnText() {
         _submitBtnText.value =
             if (questionHasAnswer())
@@ -81,24 +62,30 @@ class QuestionViewModel @Inject constructor(
             else "Submit"
     }
 
-    private fun questionHasAnswer(questionId: Int?  = null): Boolean {
+    private fun questionHasAnswer(questionId: Int? = null): Boolean {
         return _submittedAnswers.value?.firstOrNull {
             it.id == (questionId ?: _currentQuestion.id)
         } != null
     }
 
     private fun updateSubmittedAnswers(answer: Answer) {
-        _submittedAnswers.value?.let { submittedAnswers ->
-            if (answer in submittedAnswers)
-                _submittedAnswers.value = submittedAnswers - answer
-            else _submittedAnswers.value = submittedAnswers + answer
-
-            submittedAnswers.firstOrNull {
-                it.id == _currentQuestion.id
-            }?.answer?.let {
-                _answerInput.value = it
-            }
+        _submittedAnswers.value?.let {
+            _submittedAnswers.value = if (answer in it)
+                it - answer
+            else it + answer
         }
+
+        updateSubmitBtnAvailability()
+    }
+
+    private fun updateSubmitBtnAvailability() {
+        _answerInput.value = getCurrentAnswerOrEmpty()
+    }
+
+    private fun getCurrentAnswerOrEmpty(): String {
+        return _submittedAnswers.value?.firstOrNull {
+            it.id == _currentQuestion.id
+        }?.answer ?: ""
     }
 
     private fun submitAnswer(answer: Answer) {
@@ -115,6 +102,19 @@ class QuestionViewModel @Inject constructor(
                     if (!questionHasAnswer(answer.id))
                         submitBtnPressed(answer.answer, answer.id)
                 })
+            }
+        }
+    }
+
+    fun loadQuestions() {
+        viewModelScope.launch {
+            questionsRepository.loadQuestions().onSuccess {
+                if (it.isNotEmpty())
+                    _questions = it
+            }.onFailure {
+                _message.postValue(
+                    Message(false, it.message ?: "Could not load questions")
+                )
             }
         }
     }
