@@ -27,9 +27,23 @@ class QuestionViewModel @Inject constructor(
     private val _submittedAnswers = MutableLiveData(listOf<Answer>())
     private val _answerInput = MutableLiveData<String?>()
     private val _pagerUiState = MutableStateFlow(PagerUiState())
-    private var _currentQuestion = Question()
 
-    private var _questions: List<Question>? = null
+    private var _currentQuestion = Question()
+        set(value) {
+            field = value
+            updateSubmitBtnText()
+            _pagerUiState.update { uiState ->
+                uiState.copy(
+                    isPreviousEnabled = _counter != 1,
+                    isNextEnabled = _counter != _questions.size,
+                    counterText = "$_counter/${_questions.size}",
+                    currentQuestion = value.question,
+                    currentAnswer = getCurrentAnswerOrEmpty()
+                )
+            }
+        }
+
+    private var _questions: List<Question> = listOf()
         set(value) {
             field = value
             _counter = 1
@@ -38,21 +52,7 @@ class QuestionViewModel @Inject constructor(
     private var _counter: Int = 0
         set(value) {
             field = value
-            _questions?.run {
-                _currentQuestion = get(value - 1)
-
-                updateSubmitBtnText()
-
-                _pagerUiState.update { uiState ->
-                    uiState.copy(
-                        isPreviousEnabled = value != 1,
-                        isNextEnabled = value != size,
-                        counterText = "$value/${size}",
-                        currentQuestion = _currentQuestion.question,
-                        currentAnswer = getCurrentAnswerOrEmpty()
-                    )
-                }
-            }
+            _currentQuestion = _questions[value - 1]
         }
 
     init {
@@ -68,8 +68,7 @@ class QuestionViewModel @Inject constructor(
     private fun loadQuestions() {
         viewModelScope.launch {
             questionsRepository.loadQuestions().onSuccess {
-                if (it.isNotEmpty())
-                    _questions = it
+                _questions = it
             }.onFailure {
                 _message.postValue(
                     Message(false, it.message ?: "Could not load questions")
@@ -137,10 +136,8 @@ class QuestionViewModel @Inject constructor(
     }
 
     fun nextBtnPressed() {
-        _questions?.size?.let {
-            if (_counter < it)
-                _counter += 1
-        }
+        if (_counter < _questions.size)
+            _counter += 1
     }
 
     fun answerTextChanged(text: Editable?) {
