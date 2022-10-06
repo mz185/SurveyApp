@@ -9,5 +9,6 @@ data class PagerUiState(
     val isNextEnabled: Boolean = false,
     val counterText: String = "",
     val currentQuestion: String = "",
-    val currentAnswer: String = ""
+    val currentAnswer: String = "",
+    val submitBtnText: String = "Submit"
 )
