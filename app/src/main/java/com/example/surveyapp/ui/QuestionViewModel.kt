@@ -68,7 +68,8 @@ class QuestionViewModel @Inject constructor(
     private fun loadQuestions() {
         viewModelScope.launch {
             questionsRepository.loadQuestions().onSuccess {
-                _questions = it
+                if (it.isNotEmpty())
+                    _questions = it
             }.onFailure {
                 _message.postValue(
                     Message(false, it.message ?: "Could not load questions")
