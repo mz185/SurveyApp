@@ -16,7 +16,6 @@ import com.example.surveyapp.util.updateAvailability
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
-
 /**
  * Created by Marinos Zinonos on 26/09/2022.
  */
@@ -27,6 +26,11 @@ class QuestionFragment : BaseFragment<FragmentQuestionBinding>() {
     private val vm: QuestionViewModel by viewModels()
 
     override fun bind() = FragmentQuestionBinding.inflate(layoutInflater)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        vm.loadQuestions()
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
