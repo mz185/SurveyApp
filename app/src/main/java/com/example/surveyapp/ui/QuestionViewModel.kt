@@ -1,7 +1,10 @@
 package com.example.surveyapp.ui
 
 import android.text.Editable
-import androidx.lifecycle.*
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.surveyapp.data.models.Answer
 import com.example.surveyapp.data.models.Message
 import com.example.surveyapp.data.models.Question
@@ -12,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.collections.set
 
 /**
  * Created by Marinos Zinonos on 26/09/2022.
@@ -23,15 +27,16 @@ class QuestionViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _message = MutableLiveData<Message?>()
-    private val _submitBtnText = MutableLiveData<String>()
-    private val _submittedAnswers = MutableLiveData(listOf<Answer>())
-    private val _answerInput = MutableLiveData<String?>()
+
+    private val _buttonUiState = MutableStateFlow(ButtonUiState())
     private val _pagerUiState = MutableStateFlow(PagerUiState())
+
+    private val _submittedAnswers = mutableMapOf<Int, String>()
 
     private var _currentQuestion = Question()
         set(value) {
             field = value
-            updateSubmitBtnText()
+            updateSubmitButtonState()
             _pagerUiState.update { uiState ->
                 uiState.copy(
                     isPreviousEnabled = _counter != 1,
@@ -43,7 +48,7 @@ class QuestionViewModel @Inject constructor(
             }
         }
 
-    private var _questions: List<Question> = listOf()
+    private var _questions: Map<Question, Answer> = mapOf()
         set(value) {
             field = value
             _counter = 1
@@ -52,65 +57,36 @@ class QuestionViewModel @Inject constructor(
     private var _counter: Int = 0
         set(value) {
             field = value
-            _currentQuestion = _questions[value - 1]
+            _currentQuestion =
+                _questions.keys.elementAt(value - 1)
         }
 
-    private fun updateSubmitBtnText() {
-        _submitBtnText.value =
-            if (questionHasAnswer())
-                "Already submitted"
-            else "Submit"
+    private fun updateSubmitButtonState(questionId: Int? = null) {
+        _buttonUiState.update {
+            it.copy(
+                text =
+                if (questionHasAnswer())
+                    "Already submitted"
+                else "Submit",
+                isEnabled = !questionHasAnswer(questionId)
+            )
+        }
     }
 
     private fun questionHasAnswer(questionId: Int? = null): Boolean {
-        return _submittedAnswers.value?.firstOrNull {
-            it.id == (questionId ?: _currentQuestion.id)
-        } != null
-    }
-
-    private fun updateSubmittedAnswers(answer: Answer) {
-        _submittedAnswers.value?.let {
-            _submittedAnswers.value = if (answer in it)
-                it - answer
-            else it + answer
-        }
-
-        updateSubmitBtnAvailability()
-    }
-
-    private fun updateSubmitBtnAvailability() {
-        _answerInput.value = getCurrentAnswerOrEmpty()
+        return _submittedAnswers[questionId ?: _currentQuestion.id] != null
     }
 
     private fun getCurrentAnswerOrEmpty(): String {
-        return _submittedAnswers.value?.firstOrNull {
-            it.id == _currentQuestion.id
-        }?.answer ?: ""
-    }
-
-    private fun submitAnswer(answer: Answer) {
-        viewModelScope.launch {
-            questionsRepository.submitAnswer(answer).onSuccess {
-                updateSubmitBtnText()
-                _pagerUiState.update {
-                    it.copy(currentAnswer = getCurrentAnswerOrEmpty())
-                }
-                _message.postValue(Message(true, "Success"))
-            }.onFailure {
-                updateSubmittedAnswers(answer)
-                _message.postValue(Message(false, "Failure!")  {
-                    if (!questionHasAnswer(answer.id))
-                        submitBtnPressed(answer.answer, answer.id)
-                })
-            }
-        }
+        return _submittedAnswers[_currentQuestion.id] ?: ""
     }
 
     fun loadQuestions() {
         viewModelScope.launch {
-            questionsRepository.loadQuestions().onSuccess {
-                if (it.isNotEmpty())
-                    _questions = it
+            questionsRepository.loadQuestions().onSuccess { questions ->
+                if (questions.isNotEmpty())
+                    _questions =
+                        questions.associateBy({Question(it.id, it.question)}, { Answer(it.id) })
             }.onFailure {
                 _message.postValue(
                     Message(false, it.message ?: "Could not load questions")
@@ -119,12 +95,36 @@ class QuestionViewModel @Inject constructor(
         }
     }
 
-    fun submitBtnPressed(answerText: String, questionId: Int? = null) {
-        if (!questionHasAnswer()) {
-            val answer = Answer(questionId ?: _currentQuestion.id, answerText)
-            updateSubmittedAnswers(answer)
-            submitAnswer(answer)
+    private fun submitAnswer(answer: Answer) {
+        viewModelScope.launch {
+            questionsRepository.submitAnswer(answer).onSuccess {
+                _submittedAnswers[answer.id] = answer.answer
+
+                _pagerUiState.update {
+                    it.copy(
+                        submittedNoText = _submittedAnswers.size.toString(),
+                        currentAnswer = getCurrentAnswerOrEmpty()
+                    )
+                }
+
+                updateSubmitButtonState(answer.id)
+                _message.postValue(Message(true, "Success"))
+            }.onFailure {
+                if (_currentQuestion.id == answer.id)
+                    updateSubmitButtonState()
+                _message.postValue(Message(false, "Failure!")  {
+                    submitAnswer(Answer(answer.id, answer.answer))
+                })
+            }
         }
+    }
+
+    fun submitBtnPressed(answerText: String) {
+        _buttonUiState.update {
+            it.copy(isEnabled = false)
+        }
+
+        submitAnswer(Answer(_currentQuestion.id, answerText))
     }
 
     fun previousBtnPressed() {
@@ -138,28 +138,20 @@ class QuestionViewModel @Inject constructor(
     }
 
     fun answerTextChanged(text: Editable?) {
-        _answerInput.value = text?.toString()
-    }
-
-    fun getSubmitBtnAvailability(): LiveData<Boolean> {
-        return Transformations.map(_answerInput) {
-            !it.isNullOrEmpty() &&
-                    !questionHasAnswer()
+        _buttonUiState.update {
+            it.copy(
+                isEnabled = !text.isNullOrEmpty() &&
+                        !questionHasAnswer()
+            )
         }
     }
 
-    fun getSubmitButtonText(): LiveData<String> {
-        return _submitBtnText
+    fun getButtonUiState(): StateFlow<ButtonUiState> {
+        return _buttonUiState
     }
 
     fun getPagerUiState(): StateFlow<PagerUiState> {
         return _pagerUiState
-    }
-
-    fun getTotalQuestionsSubmitted(): LiveData<String> {
-        return Transformations.map(_submittedAnswers) {
-            it.size.toString()
-        }
     }
 
     fun getMessage(): LiveData<Message?> {

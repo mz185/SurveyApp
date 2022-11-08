@@ -43,24 +43,6 @@ class QuestionFragment : BaseFragment<FragmentQuestionBinding>() {
                     }
                 }
 
-                getTotalQuestionsSubmitted().observe(viewLifecycleOwner) {
-                    it?.let {
-                       questionsSubmitted.text = it
-                    }
-                }
-
-                getSubmitBtnAvailability().observe(viewLifecycleOwner) {
-                    it?.let {
-                        submitBtn.isEnabled = it
-                    }
-                }
-
-                getSubmitButtonText().observe(viewLifecycleOwner) {
-                    it?.let {
-                        submitBtn.text = it
-                    }
-                }
-
                 previousBtn.setOnClickListener {
                     previousBtnPressed()
                 }
@@ -87,6 +69,18 @@ class QuestionFragment : BaseFragment<FragmentQuestionBinding>() {
                             nextBtn.updateAvailability(it.isNextEnabled)
                             answerEditText.setText(it.currentAnswer)
                             questionTextView.text = it.currentQuestion
+                            questionsSubmitted.text = it.submittedNoText
+                        }
+                    }
+                }
+
+                lifecycleScope.launch {
+                    repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        getButtonUiState().collect {
+                            submitBtn.apply {
+                                text = it.text
+                                isEnabled = it.isEnabled
+                            }
                         }
                     }
                 }
